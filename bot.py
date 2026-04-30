@@ -6,25 +6,25 @@ import csv
 from playwright.sync_api import sync_playwright
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/1c2QmtlaBNsQ32j7JWly-ayigbkmfireBUisUEzxaJTY/export?format=csv&gid=561406276"
-USED_FILE = "used_codes.txt"   # 🔥 추가
+USED_FILE = "used_pairs.txt"
 
 # -----------------------
-# used_codes 관리
+# used_pairs 관리 (🔥 핵심 변경)
 # -----------------------
-def load_used_codes():
+def load_used_pairs():
     if not os.path.exists(USED_FILE):
         return set()
     with open(USED_FILE, "r", encoding="utf-8") as f:
         return set(line.strip() for line in f)
 
 
-def save_used_code(code):
+def save_used_pair(code, player):
     with open(USED_FILE, "a", encoding="utf-8") as f:
-        f.write(code + "\n")
+        f.write(f"{code}|{player}\n")
 
 
 # -----------------------
-# CSV 데이터 가져오기 (🔥 인코딩 + 필터 개선)
+# CSV 데이터 가져오기
 # -----------------------
 def get_data():
     try:
@@ -34,9 +34,7 @@ def get_data():
             print("❌ CSV 요청 실패")
             return [], []
 
-        # 🔥 인코딩 깨짐 방지
         content = res.content.decode("utf-8", errors="ignore")
-
         reader = csv.reader(content.splitlines())
 
         giftcodes = set()
@@ -44,7 +42,7 @@ def get_data():
 
         for i, row in enumerate(reader):
             if i == 0:
-                continue  # 헤더 제외
+                continue
 
             if len(row) < 2:
                 continue
@@ -52,13 +50,11 @@ def get_data():
             code = row[0].strip()
             player = row[1].strip()
 
-            # 🔥 GiftCode 필터 (최소 4글자 + 영문/숫자)
             if code:
                 code = code.upper()
                 if code.isalnum() and len(code) >= 4:
                     giftcodes.add(code)
 
-            # 🔥 Player 필터
             if player and player.isdigit():
                 players.add(player)
 
@@ -100,10 +96,10 @@ def safe_click(page, text):
 
 
 # -----------------------
-# Redeem
+# Redeem (스크린샷 항상 생성)
 # -----------------------
 def redeem(page, player_id, giftcode, step_id):
-    base = f"screenshots/{step_id}"
+    base = f"screenshots/{step_id}_{player_id}_{giftcode}"
 
     page.goto("https://ks-giftcode.centurygame.com/")
     page.screenshot(path=f"{base}_1_home.png")
@@ -139,16 +135,9 @@ def run():
         print("❌ 데이터 없음")
         return
 
-    # 🔥 이미 사용한 코드 제거
-    used_codes = load_used_codes()
-    giftcodes = [c for c in giftcodes if c not in used_codes]
+    used_pairs = load_used_pairs()
 
-    if not giftcodes:
-        print("✅ 새로운 코드 없음 (이미 모두 사용됨)")
-        return
-
-    if not os.path.exists("screenshots"):
-        os.makedirs("screenshots")
+    os.makedirs("screenshots", exist_ok=True)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -157,9 +146,15 @@ def run():
         step = 0
 
         for code in giftcodes:
-            success = True  # 🔥 전체 player 성공 여부 체크
-
             for player in players:
+
+                pair_key = f"{code}|{player}"
+
+                # 🔥 이미 처리된 조합은 스킵
+                if pair_key in used_pairs:
+                    print(f"[SKIP] {pair_key}")
+                    continue
+
                 step += 1
 
                 for retry in range(3):
@@ -169,22 +164,18 @@ def run():
                         redeem(page, player, code, step)
 
                         print(f"[SUCCESS] {code} -> {player}")
+
+                        # 🔥 성공 즉시 기록
+                        save_used_pair(code, player)
                         break
 
                     except Exception as e:
                         print(f"[ERROR] {e}")
                         time.sleep(3)
                 else:
-                    success = False  # 한 명이라도 실패하면 false
+                    print(f"[FAIL] {code} -> {player}")
 
                 human_delay(2, 5)
-
-            # 🔥 모든 player 성공했을 때만 저장
-            if success:
-                print(f"💾 코드 저장: {code}")
-                save_used_code(code)
-            else:
-                print(f"⚠️ 일부 실패 → 저장 안함: {code}")
 
         browser.close()
 
