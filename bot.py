@@ -3,12 +3,13 @@ import time
 import random
 import os
 import csv
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from playwright.sync_api import sync_playwright
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/1c2QmtlaBNsQ32j7JWly-ayigbkmfireBUisUEzxaJTY/export?format=csv&gid=561406276"
 USED_FILE = "used_pairs.txt"
-MAX_WORKERS = 3  # 🔥 병렬 개수 (안전 권장: 2~3)
+
+PARALLEL_PAGES = 3  # 🔥 안전 병렬 개수 (2~3 추천)
+
 
 # -----------------------
 # used_pairs 관리
@@ -76,7 +77,7 @@ def get_data():
 # -----------------------
 # 딜레이
 # -----------------------
-def human_delay(a=1.5, b=3.5):
+def human_delay(a=1.0, b=2.0):  # 🔥 살짝 줄임 (안정선)
     time.sleep(random.uniform(a, b))
 
 
@@ -113,7 +114,7 @@ def redeem(page, player_id, giftcode, step_id):
     human_delay()
 
     safe_click(page, "Login")
-    human_delay(2, 4)
+    human_delay()
     page.screenshot(path=f"{base}_3_login.png")
 
     page.wait_for_selector("input[placeholder='Enter Gift Code']")
@@ -123,36 +124,8 @@ def redeem(page, player_id, giftcode, step_id):
     human_delay()
 
     safe_click(page, "Confirm")
-    human_delay(2, 4)
+    human_delay()
     page.screenshot(path=f"{base}_5_done.png")
-
-
-# -----------------------
-# 단일 작업 (병렬용)
-# -----------------------
-def process_task(p, code, player, step):
-    browser = p.chromium.launch(headless=True)
-    page = browser.new_page()
-
-    try:
-        for retry in range(3):
-            try:
-                print(f"[TRY] {code} -> {player}")
-
-                redeem(page, player, code, step)
-
-                print(f"[SUCCESS] {code} -> {player}")
-
-                save_used_pair(code, player)
-                return True
-
-            except Exception as e:
-                print(f"[ERROR] {e}")
-                time.sleep(3)
-        print(f"[FAIL] {code} -> {player}")
-        return False
-    finally:
-        browser.close()
 
 
 # -----------------------
@@ -168,32 +141,48 @@ def run():
     used_pairs = load_used_pairs()
     os.makedirs("screenshots", exist_ok=True)
 
-    tasks = []
-    step = 0
-
-    for code in giftcodes:
-        for player in players:
-            pair_key = f"{code}|{player}"
-
-            if pair_key in used_pairs:
-                print(f"[SKIP] {pair_key}")
-                continue
-
-            step += 1
-            tasks.append((code, player, step))
-
-    # 🔥 병렬 실행
     with sync_playwright() as p:
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = [
-                executor.submit(process_task, p, code, player, step)
-                for code, player, step in tasks
-            ]
+        browser = p.chromium.launch(headless=True)
 
-            for future in as_completed(futures):
-                future.result()
+        # 🔥 page 여러 개 생성
+        pages = [browser.new_page() for _ in range(PARALLEL_PAGES)]
 
-    print("✅ 모든 작업 완료")
+        step = 0
+        page_index = 0
+
+        for code in giftcodes:
+            for player in players:
+
+                pair_key = f"{code}|{player}"
+
+                if pair_key in used_pairs:
+                    print(f"[SKIP] {pair_key}")
+                    continue
+
+                step += 1
+
+                page = pages[page_index]
+                page_index = (page_index + 1) % PARALLEL_PAGES
+
+                for retry in range(3):
+                    try:
+                        print(f"[TRY] {code} -> {player}")
+
+                        redeem(page, player, code, step)
+
+                        print(f"[SUCCESS] {code} -> {player}")
+                        save_used_pair(code, player)
+                        break
+
+                    except Exception as e:
+                        print(f"[ERROR] {e}")
+                        time.sleep(2)
+                else:
+                    print(f"[FAIL] {code} -> {player}")
+
+                human_delay()
+
+        browser.close()
 
 
 if __name__ == "__main__":
