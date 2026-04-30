@@ -3,39 +3,50 @@ import time
 import random
 from playwright.sync_api import sync_playwright
 
-GAS_URL = "https://script.google.com/macros/s/AKfycby58waGTukYvm-CM2-CuGWW0uS0apyP2L4ILzrtmneyh4jZSDo_2XYVQKSIgFS4puqR/exec"
+CSV_URL = "https://docs.google.com/spreadsheets/d/1c2QmtlaBNsQ32j7JWly-ayigbkmfireBUisUEzxaJTY/export?format=csv&gid=561406276"
 
 # -----------------------
-# GAS 데이터 가져오기 (🔥 수정됨)
+# CSV 데이터 가져오기 (🔥 구조 변경)
 # -----------------------
 def get_data():
     try:
-        res = requests.get(GAS_URL, timeout=10)
+        res = requests.get(CSV_URL, timeout=10)
 
         print("STATUS:", res.status_code)
-        print("RESPONSE:", res.text[:300])  # 🔥 핵심 디버깅
+        print("RAW:", res.text[:200])
 
         if res.status_code != 200:
-            print("❌ GAS 요청 실패")
-            return [], []
+            print("❌ CSV 요청 실패")
+            return []
 
-        try:
-            data = res.json()
-        except Exception as e:
-            print("❌ JSON 파싱 실패:", e)
-            return [], []
+        lines = res.text.splitlines()
 
-        giftcodes = data.get("giftcodes", [])
-        players = data.get("players", [])
+        if len(lines) < 2:
+            print("❌ 데이터 없음")
+            return []
 
-        print("Giftcodes:", giftcodes)
-        print("Players:", players)
+        pairs = []
 
-        return giftcodes, players
+        # 👉 2행부터 시작
+        for row in lines[1:]:
+            cols = row.split(",")
+
+            if len(cols) < 2:
+                continue
+
+            giftcode = cols[0].strip()
+            player = cols[1].strip()
+
+            if giftcode and player:
+                pairs.append((giftcode, player))
+
+        print("Pairs:", pairs)
+
+        return pairs
 
     except Exception as e:
-        print("❌ GAS 연결 자체 실패:", e)
-        return [], []
+        print("❌ CSV 처리 실패:", e)
+        return []
 
 
 # -----------------------
@@ -94,10 +105,10 @@ def redeem(page, player_id, giftcode):
 # 실행
 # -----------------------
 def run():
-    giftcodes, players = get_data()
+    pairs = get_data()
 
-    if not giftcodes or not players:
-        print("❌ 데이터 없음 (GAS 문제 가능성 높음)")
+    if not pairs:
+        print("❌ 데이터 없음 (CSV 확인)")
         return
 
     with sync_playwright() as p:
@@ -112,19 +123,21 @@ def run():
 
         page = context.new_page()
 
-        for code in giftcodes:
-            for player in players:
-                for retry in range(3):
-                    try:
-                        print(f"[TRY] {code} -> {player}")
-                        redeem(page, player, code)
-                        print(f"[SUCCESS] {code} -> {player}")
-                        break
-                    except Exception as e:
-                        print(f"[ERROR] {e}")
-                        time.sleep(3)
+        for giftcode, player in pairs:
+            for retry in range(3):
+                try:
+                    print(f"[TRY] {giftcode} -> {player}")
 
-                human_delay(2, 5)
+                    redeem(page, player, giftcode)
+
+                    print(f"[SUCCESS] {giftcode} -> {player}")
+                    break
+
+                except Exception as e:
+                    print(f"[ERROR] {e}")
+                    time.sleep(3)
+
+            human_delay(2, 5)
 
         browser.close()
 
