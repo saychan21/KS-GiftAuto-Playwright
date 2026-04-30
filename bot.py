@@ -2,6 +2,7 @@ import requests
 import time
 import random
 import os
+import csv
 from playwright.sync_api import sync_playwright
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/1c2QmtlaBNsQ32j7JWly-ayigbkmfireBUisUEzxaJTY/export?format=csv&gid=561406276"
@@ -13,17 +14,17 @@ USED_FILE = "used_codes.txt"   # 🔥 추가
 def load_used_codes():
     if not os.path.exists(USED_FILE):
         return set()
-    with open(USED_FILE, "r") as f:
+    with open(USED_FILE, "r", encoding="utf-8") as f:
         return set(line.strip() for line in f)
 
 
 def save_used_code(code):
-    with open(USED_FILE, "a") as f:
+    with open(USED_FILE, "a", encoding="utf-8") as f:
         f.write(code + "\n")
 
 
 # -----------------------
-# CSV 데이터 가져오기
+# CSV 데이터 가져오기 (🔥 인코딩 + 필터 개선)
 # -----------------------
 def get_data():
     try:
@@ -33,22 +34,36 @@ def get_data():
             print("❌ CSV 요청 실패")
             return [], []
 
-        lines = res.text.splitlines()
+        # 🔥 인코딩 깨짐 방지
+        content = res.content.decode("utf-8", errors="ignore")
 
-        giftcodes = []
-        players = []
+        reader = csv.reader(content.splitlines())
 
-        for row in lines[1:]:
-            cols = row.split(",")
+        giftcodes = set()
+        players = set()
 
-            if len(cols) >= 1 and cols[0].strip():
-                giftcodes.append(cols[0].strip())
+        for i, row in enumerate(reader):
+            if i == 0:
+                continue  # 헤더 제외
 
-            if len(cols) >= 2 and cols[1].strip():
-                players.append(cols[1].strip())
+            if len(row) < 2:
+                continue
 
-        giftcodes = list(set(giftcodes))
-        players = list(set(players))
+            code = row[0].strip()
+            player = row[1].strip()
+
+            # 🔥 GiftCode 필터 (최소 4글자 + 영문/숫자)
+            if code:
+                code = code.upper()
+                if code.isalnum() and len(code) >= 4:
+                    giftcodes.add(code)
+
+            # 🔥 Player 필터
+            if player and player.isdigit():
+                players.add(player)
+
+        giftcodes = list(giftcodes)
+        players = list(players)
 
         print("Giftcodes:", giftcodes)
         print("Players:", players)
