@@ -5,9 +5,25 @@ import os
 from playwright.sync_api import sync_playwright
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/1c2QmtlaBNsQ32j7JWly-ayigbkmfireBUisUEzxaJTY/export?format=csv&gid=561406276"
+USED_FILE = "used_codes.txt"   # 🔥 추가
 
 # -----------------------
-# CSV 데이터 가져오기 (🔥 핵심 수정)
+# used_codes 관리
+# -----------------------
+def load_used_codes():
+    if not os.path.exists(USED_FILE):
+        return set()
+    with open(USED_FILE, "r") as f:
+        return set(line.strip() for line in f)
+
+
+def save_used_code(code):
+    with open(USED_FILE, "a") as f:
+        f.write(code + "\n")
+
+
+# -----------------------
+# CSV 데이터 가져오기
 # -----------------------
 def get_data():
     try:
@@ -25,15 +41,12 @@ def get_data():
         for row in lines[1:]:
             cols = row.split(",")
 
-            # A열 → GiftCode
             if len(cols) >= 1 and cols[0].strip():
                 giftcodes.append(cols[0].strip())
 
-            # B열 → Player
             if len(cols) >= 2 and cols[1].strip():
                 players.append(cols[1].strip())
 
-        # 중복 제거
         giftcodes = list(set(giftcodes))
         players = list(set(players))
 
@@ -72,7 +85,7 @@ def safe_click(page, text):
 
 
 # -----------------------
-# Redeem (스크린샷 유지)
+# Redeem
 # -----------------------
 def redeem(page, player_id, giftcode, step_id):
     base = f"screenshots/{step_id}"
@@ -102,13 +115,21 @@ def redeem(page, player_id, giftcode, step_id):
 
 
 # -----------------------
-# 실행 (🔥 핵심 변경)
+# 실행
 # -----------------------
 def run():
     giftcodes, players = get_data()
 
     if not giftcodes or not players:
         print("❌ 데이터 없음")
+        return
+
+    # 🔥 이미 사용한 코드 제거
+    used_codes = load_used_codes()
+    giftcodes = [c for c in giftcodes if c not in used_codes]
+
+    if not giftcodes:
+        print("✅ 새로운 코드 없음 (이미 모두 사용됨)")
         return
 
     if not os.path.exists("screenshots"):
@@ -120,8 +141,9 @@ def run():
 
         step = 0
 
-        # 🔥 모든 조합 실행
         for code in giftcodes:
+            success = True  # 🔥 전체 player 성공 여부 체크
+
             for player in players:
                 step += 1
 
@@ -137,8 +159,17 @@ def run():
                     except Exception as e:
                         print(f"[ERROR] {e}")
                         time.sleep(3)
+                else:
+                    success = False  # 한 명이라도 실패하면 false
 
                 human_delay(2, 5)
+
+            # 🔥 모든 player 성공했을 때만 저장
+            if success:
+                print(f"💾 코드 저장: {code}")
+                save_used_code(code)
+            else:
+                print(f"⚠️ 일부 실패 → 저장 안함: {code}")
 
         browser.close()
 
