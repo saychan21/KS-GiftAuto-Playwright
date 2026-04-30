@@ -28,25 +28,25 @@ jobs:
       - name: Run Bot
         run: python bot.py
 
-      # 📸 스크린샷 다운로드
+      # 📸 스크린샷 업로드
       - name: Upload Screenshots
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
           path: screenshots/
 
-      # 🧾 사용된 코드 다운로드 (🔥 추가)
-      - name: Upload Used Codes
+      # 🧾 used_pairs 업로드 (🔥 핵심)
+      - name: Upload Used Pairs
         uses: actions/upload-artifact@v4
         with:
-          name: used-codes
-          path: used_codes.txt
+          name: used-pairs
+          path: used_pairs.txt
 
-      # 💾 사용된 코드 저장 (GitHub에 기록 유지)
-      - name: Commit used codes
+      # 💾 used_pairs Git 저장 (🔥 핵심)
+      - name: Commit used pairs
         run: |
           git config --global user.name "bot"
           git config --global user.email "bot@github.com"
-          git add used_codes.txt
-          git commit -m "update used codes" || echo "no changes"
+          git add used_pairs.txt
+          git commit -m "update used pairs" || echo "no changes"
           git push
