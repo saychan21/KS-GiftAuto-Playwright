@@ -3,7 +3,6 @@ import time
 import random
 import os
 import csv
-import re
 from playwright.sync_api import sync_playwright
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/1c2QmtlaBNsQ32j7JWly-ayigbkmfireBUisUEzxaJTY/export?format=csv&gid=561406276"
@@ -15,82 +14,65 @@ USED_FILE = "used_codes.txt"   # 🔥 추가
 def load_used_codes():
     if not os.path.exists(USED_FILE):
         return set()
-    with open(USED_FILE, "r", encoding="utf-8-sig") as f:
+    with open(USED_FILE, "r", encoding="utf-8") as f:
         return set(line.strip() for line in f)
 
 
 def save_used_code(code):
-    with open(USED_FILE, "a", encoding="utf-8-sig") as f:
+    with open(USED_FILE, "a", encoding="utf-8") as f:
         f.write(code + "\n")
 
 
 # -----------------------
-# 데이터 가져오기 (🔥 CSV + 웹 크롤링 혼합)
+# CSV 데이터 가져오기 (🔥 인코딩 + 필터 개선)
 # -----------------------
 def get_data():
-    giftcodes = set()
-    players = set()
-
-    # -----------------------
-    # Player → CSV
-    # -----------------------
     try:
         res = requests.get(CSV_URL, timeout=10)
 
-        if res.status_code == 200:
-            content = res.content.decode("utf-8", errors="ignore")
-            reader = csv.reader(content.splitlines())
+        if res.status_code != 200:
+            print("❌ CSV 요청 실패")
+            return [], []
 
-            for i, row in enumerate(reader):
-                if i == 0:
-                    continue
-                if len(row) < 2:
-                    continue
+        # 🔥 인코딩 깨짐 방지
+        content = res.content.decode("utf-8", errors="ignore")
 
-                player = row[1].strip()
-                if player and player.isdigit():
-                    players.add(player)
+        reader = csv.reader(content.splitlines())
 
-    except Exception as e:
-        print("❌ Player CSV 실패:", e)
+        giftcodes = set()
+        players = set()
 
-    # -----------------------
-    # GiftCode → 웹 크롤링
-    # -----------------------
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+        for i, row in enumerate(reader):
+            if i == 0:
+                continue  # 헤더 제외
 
-            page.goto("https://kingshot.net/gift-codes", timeout=30000)
+            if len(row) < 2:
+                continue
 
-            page.wait_for_selector("text=Active", timeout=10000)
-            page.wait_for_timeout(2000)
+            code = row[0].strip()
+            player = row[1].strip()
 
-            sections = page.query_selector_all("text=Active")
+            # 🔥 GiftCode 필터 (최소 4글자 + 영문/숫자)
+            if code:
+                code = code.upper()
+                if code.isalnum() and len(code) >= 4:
+                    giftcodes.add(code)
 
-            for sec in sections:
-                parent = sec.locator("..").locator("..")
-                text = parent.inner_text()
+            # 🔥 Player 필터
+            if player and player.isdigit():
+                players.add(player)
 
-                matches = re.findall(r"\b[A-Z0-9]{4,}\b", text)
+        giftcodes = list(giftcodes)
+        players = list(players)
 
-                for m in matches:
-                    if not m.isdigit():
-                        giftcodes.add(m)
+        print("Giftcodes:", giftcodes)
+        print("Players:", players)
 
-            browser.close()
+        return giftcodes, players
 
     except Exception as e:
-        print("❌ GiftCode 크롤링 실패:", e)
-
-    giftcodes = list(giftcodes)
-    players = list(players)
-
-    print("Giftcodes:", giftcodes)
-    print("Players:", players)
-
-    return giftcodes, players
+        print("❌ CSV 처리 실패:", e)
+        return [], []
 
 
 # -----------------------
@@ -175,7 +157,7 @@ def run():
         step = 0
 
         for code in giftcodes:
-            success = True
+            success = True  # 🔥 전체 player 성공 여부 체크
 
             for player in players:
                 step += 1
@@ -193,10 +175,11 @@ def run():
                         print(f"[ERROR] {e}")
                         time.sleep(3)
                 else:
-                    success = False
+                    success = False  # 한 명이라도 실패하면 false
 
                 human_delay(2, 5)
 
+            # 🔥 모든 player 성공했을 때만 저장
             if success:
                 print(f"💾 코드 저장: {code}")
                 save_used_code(code)
