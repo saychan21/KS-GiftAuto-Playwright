@@ -2,8 +2,12 @@ name: Gift Redeem Bot
 
 on:
   schedule:
-    - cron: "0 */12 * * *"
+    - cron: "0 */6 * * *"   # 6시간마다 실행
   workflow_dispatch:
+
+concurrency:
+  group: gift-bot
+  cancel-in-progress: true
 
 jobs:
   run-bot:
@@ -19,14 +23,30 @@ jobs:
       - name: Install
         run: |
           pip install playwright requests
-          playwright install --with-deps
+          playwright install chromium
 
       - name: Run Bot
         run: python bot.py
 
-      # 🔥 핵심: 스크린샷 다운로드 가능
+      # 📸 스크린샷 다운로드
       - name: Upload Screenshots
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
           path: screenshots/
+
+      # 🧾 사용된 코드 다운로드 (🔥 추가)
+      - name: Upload Used Codes
+        uses: actions/upload-artifact@v4
+        with:
+          name: used-codes
+          path: used_codes.txt
+
+      # 💾 사용된 코드 저장 (GitHub에 기록 유지)
+      - name: Commit used codes
+        run: |
+          git config --global user.name "bot"
+          git config --global user.email "bot@github.com"
+          git add used_codes.txt
+          git commit -m "update used codes" || echo "no changes"
+          git push
