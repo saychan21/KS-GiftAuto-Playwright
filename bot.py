@@ -1,12 +1,13 @@
 import requests
 import time
 import random
+import os
 from playwright.sync_api import sync_playwright
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/1c2QmtlaBNsQ32j7JWly-ayigbkmfireBUisUEzxaJTY/export?format=csv&gid=561406276"
 
 # -----------------------
-# CSV 데이터 가져오기 (🔥 구조 변경)
+# CSV 데이터 가져오기
 # -----------------------
 def get_data():
     try:
@@ -27,7 +28,6 @@ def get_data():
 
         pairs = []
 
-        # 👉 2행부터 시작
         for row in lines[1:]:
             cols = row.split(",")
 
@@ -57,7 +57,7 @@ def human_delay(a=1.5, b=3.5):
 
 
 # -----------------------
-# JS 강제 클릭
+# JS 클릭
 # -----------------------
 def js_click_by_text(page, text):
     page.evaluate(f"""
@@ -66,9 +66,6 @@ def js_click_by_text(page, text):
     """)
 
 
-# -----------------------
-# 안전 클릭
-# -----------------------
 def safe_click(page, text):
     try:
         page.click(f"text={text}", timeout=5000)
@@ -77,28 +74,37 @@ def safe_click(page, text):
 
 
 # -----------------------
-# Redeem
+# Redeem (🔥 스크린샷 포함)
 # -----------------------
-def redeem(page, player_id, giftcode):
-    page.goto("https://ks-giftcode.centurygame.com/", timeout=30000)
+def redeem(page, player_id, giftcode, step_id):
+    base = f"screenshots/{step_id}"
 
+    page.goto("https://ks-giftcode.centurygame.com/", timeout=30000)
+    page.screenshot(path=f"{base}_1_home.png")
+
+    # Player 입력
     page.wait_for_selector("input", timeout=10000)
     page.fill("input", player_id)
+    page.screenshot(path=f"{base}_2_player_input.png")
 
     human_delay()
 
+    # Login 클릭
     safe_click(page, "Login")
-
     human_delay(2, 4)
+    page.screenshot(path=f"{base}_3_after_login.png")
 
+    # Gift Code 입력
     page.wait_for_selector("input[placeholder='Enter Gift Code']", timeout=10000)
     page.fill("input[placeholder='Enter Gift Code']", giftcode)
+    page.screenshot(path=f"{base}_4_code_input.png")
 
     human_delay()
 
+    # Confirm 클릭
     safe_click(page, "Confirm")
-
     human_delay(2, 4)
+    page.screenshot(path=f"{base}_5_after_confirm.png")
 
 
 # -----------------------
@@ -110,6 +116,10 @@ def run():
     if not pairs:
         print("❌ 데이터 없음 (CSV 확인)")
         return
+
+    # 🔥 스크린샷 폴더 생성
+    if not os.path.exists("screenshots"):
+        os.makedirs("screenshots")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -123,12 +133,16 @@ def run():
 
         page = context.new_page()
 
+        step = 0
+
         for giftcode, player in pairs:
+            step += 1
+
             for retry in range(3):
                 try:
                     print(f"[TRY] {giftcode} -> {player}")
 
-                    redeem(page, player, giftcode)
+                    redeem(page, player, giftcode, step)
 
                     print(f"[SUCCESS] {giftcode} -> {player}")
                     break
