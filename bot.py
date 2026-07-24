@@ -50,8 +50,9 @@ def get_data():
             if len(row) < 2:
                 continue
 
-            code = row[0].strip()
+            code = row[3].strip()
             player = row[1].strip()
+            kingdom = row[2].strip()
 
             if code:
                 code = code.upper()
@@ -59,7 +60,7 @@ def get_data():
                     giftcodes.add(code)
 
             if player and player.isdigit():
-                players.add(player)
+                players.add((player, kingdom))
 
         giftcodes = list(giftcodes)
         players = list(players)
@@ -101,21 +102,16 @@ def safe_click(page, text):
 # -----------------------
 # Redeem
 # -----------------------
-def redeem(page, player_id, giftcode, step_id):
+def redeem(page, player_id, kingdom, giftcode, step_id):
     base = f"screenshots/{step_id}_{player_id}_{giftcode}"
 
     page.goto("https://ks-giftcode.centurygame.com/")
     page.screenshot(path=f"{base}_1_home.png")
 
-    page.wait_for_selector("input")
-    page.fill("input", player_id)
+    page.wait_for_selector("input[placeholder='Player ID']")
+    page.fill("input[placeholder='Player ID']", player_id)
+    page.fill("input[placeholder='Kingdom']", kingdom)
     page.screenshot(path=f"{base}_2_player.png")
-
-    human_delay()
-
-    safe_click(page, "Login")
-    human_delay()
-    page.screenshot(path=f"{base}_3_login.png")
 
     page.wait_for_selector("input[placeholder='Enter Gift Code']")
     page.fill("input[placeholder='Enter Gift Code']", giftcode)
@@ -151,7 +147,7 @@ def run():
         page_index = 0
 
         for code in giftcodes:
-            for player in players:
+            for player, kingdom in players:
 
                 pair_key = f"{code}|{player}"
 
@@ -168,7 +164,7 @@ def run():
                     try:
                         print(f"[TRY] {code} -> {player}")
 
-                        redeem(page, player, code, step)
+                        redeem(page, player, kingdom, code, step)
 
                         print(f"[SUCCESS] {code} -> {player}")
                         save_used_pair(code, player)
